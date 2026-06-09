@@ -2114,7 +2114,8 @@ int32_t rowsToRanges(
   ScratchPtr<vector_size_t, 64> innerRowsHolder(scratch);
   if (rawNulls) {
     ScratchPtr<uint64_t, 4> nullsHolder(scratch);
-    auto* nulls = nullsHolder.get(bits::nwords(rows.size()));
+    auto* nulls =
+        nullsHolder.get(bits::nwords(static_cast<uint64_t>(rows.size())));
     simd::gatherBits(rawNulls, rows, nulls);
     auto* mutableNonNullRows = nonNullHolder.get(numRows);
     auto* mutableInnerRows = innerRowsHolder.get(numRows);
@@ -2351,7 +2352,8 @@ void serializeFlatVector(
   }
 
   ScratchPtr<uint64_t, 4> nullsHolder(scratch);
-  uint64_t* nulls = nullsHolder.get(bits::nwords(rows.size()));
+  uint64_t* nulls =
+      nullsHolder.get(bits::nwords(static_cast<uint64_t>(rows.size())));
   simd::gatherBits(vector->rawNulls(), rows, nulls);
   if (std::is_same_v<T, Timestamp>) {
     appendTimestamps(
@@ -2393,12 +2395,14 @@ void serializeFlatVector<TypeKind::BOOLEAN>(
   int32_t numValueBits;
   if (!flatVector->mayHaveNulls()) {
     stream->appendNonNull(rows.size());
-    valueBits = bitsHolder.get(bits::nwords(rows.size()));
+    valueBits =
+        bitsHolder.get(bits::nwords(static_cast<uint64_t>(rows.size())));
     simd::gatherBits(
         reinterpret_cast<const uint64_t*>(rawValues), rows, valueBits);
     numValueBits = rows.size();
   } else {
-    uint64_t* nulls = bitsHolder.get(bits::nwords(rows.size()));
+    uint64_t* nulls =
+        bitsHolder.get(bits::nwords(static_cast<uint64_t>(rows.size())));
     simd::gatherBits(vector->rawNulls(), rows, nulls);
     ScratchPtr<vector_size_t, 64> nonNullsHolder(scratch);
     auto* nonNulls = nonNullsHolder.get(rows.size());
@@ -2533,7 +2537,8 @@ void serializeRowVector(
   auto innerRows = rows.data();
   auto numInnerRows = rows.size();
   if (auto rawNulls = vector->rawNulls()) {
-    auto nulls = nullsHolder.get(bits::nwords(rows.size()));
+    auto nulls =
+        nullsHolder.get(bits::nwords(static_cast<uint64_t>(rows.size())));
     simd::gatherBits(rawNulls, rows, nulls);
     auto* mutableInnerRows = innerRowsHolder.get(rows.size());
     numInnerRows =
@@ -2973,7 +2978,7 @@ void estimateFlatSerializedSize(
     auto rawNulls = vector->rawNulls();
     ScratchPtr<uint64_t, 4> nullsHolder(scratch);
     ScratchPtr<int32_t, 64> nonNullsHolder(scratch);
-    auto nulls = nullsHolder.get(bits::nwords(numRows));
+    auto nulls = nullsHolder.get(bits::nwords(static_cast<uint64_t>(numRows)));
     simd::gatherBits(rawNulls, rows, nulls);
     auto nonNulls = nonNullsHolder.get(numRows);
     const auto numNonNull = simd::indicesOfSetBits(nulls, 0, numRows, nonNulls);
@@ -3001,7 +3006,7 @@ void estimateFlatSerializedSizeVarcharOrVarbinary(
   } else {
     ScratchPtr<uint64_t, 4> nullsHolder(scratch);
     ScratchPtr<int32_t, 64> nonNullsHolder(scratch);
-    auto nulls = nullsHolder.get(bits::nwords(numRows));
+    auto nulls = nullsHolder.get(bits::nwords(static_cast<uint64_t>(numRows)));
     simd::gatherBits(rawNulls, rows, nulls);
     auto* nonNulls = nonNullsHolder.get(numRows);
     auto numNonNull = simd::indicesOfSetBits(nulls, 0, numRows, nonNulls);
@@ -3158,7 +3163,8 @@ void estimateSerializedSizeInt(
       const auto numRows = rows.size();
       int32_t numInner = numRows;
       if (vector->mayHaveNulls()) {
-        auto nulls = nullsHolder.get(bits::nwords(numRows));
+        auto nulls =
+            nullsHolder.get(bits::nwords(static_cast<uint64_t>(numRows)));
         simd::gatherBits(vector->rawNulls(), rows, nulls);
         auto mutableInnerRows = innerRowsHolder.get(numRows);
         numInner = simd::indicesOfSetBits(nulls, 0, numRows, mutableInnerRows);
