@@ -2904,3 +2904,61 @@ INSTANTIATE_TEST_SUITE_P(
     [](const testing::TestParamInfo<FloatToDoubleTestParam>& info) {
       return info.param.toString();
     });
+
+TEST_F(ParquetReaderTest, lazyRepDefSanitizedCustomTagRepro) {
+  const std::string kFilePath =
+      getExampleFilePath("bolt_lazy_repdef_sanitized_custom_tag.parquet");
+  constexpr int32_t kBatchRows = 4096;
+
+  if (!std::filesystem::exists(kFilePath)) {
+    GTEST_SKIP() << "Sanitized repro parquet file is not available: "
+                 << kFilePath;
+  }
+
+  auto rowType =
+      ROW({"filter_col", "map_col"}, {INTEGER(), MAP(VARCHAR(), VARCHAR())});
+
+  auto scanSpec = makeScanSpec(rowType);
+  scanSpec->getOrCreateChild("filter_col")->setFilter(exec::between(3, 4));
+
+  auto* mapSpec = scanSpec->getOrCreateChild("map_col");
+  mapSpec->setExtractValues(true);
+  for (auto& child : mapSpec->children()) {
+    child->setExtractValues(true);
+  }
+
+  bytedance::bolt::dwio::common::ReaderOptions readerOpts{leafPool_.get()};
+  auto reader = createReader(kFilePath, readerOpts);
+  auto rowReaderOpts = getReaderOpts(rowType);
+  rowReaderOpts.setScanSpec(scanSpec);
+  rowReaderOpts.setDecodeRepDefPageCount(10);
+  rowReaderOpts.setParquetRepDefMemoryLimit(16UL << 20);
+
+  auto rowReader = reader->createRowReader(rowReaderOpts);
+  VectorPtr result = BaseVector::create(rowType, 0, leafPool_.get());
+  uint64_t totalRows = 0;
+  uint64_t totalCustomTagEntries = 0;
+  for (;;) {
+    const auto got = rowReader->next(kBatchRows, result);
+    if (got == 0) {
+      break;
+    }
+
+    auto* row = result->as<RowVector>();
+    ASSERT_NE(row, nullptr);
+    ASSERT_EQ(row->childrenSize(), 2);
+    auto customTag = row->childAt(1)->loadedVector();
+    ASSERT_NE(customTag, nullptr);
+    auto* map = customTag->as<MapVector>();
+    ASSERT_NE(map, nullptr);
+    for (vector_size_t i = 0; i < map->size(); ++i) {
+      if (!map->isNullAt(i)) {
+        totalCustomTagEntries += map->sizeAt(i);
+      }
+    }
+    totalRows += result->size();
+  }
+
+  EXPECT_GT(totalRows, 0);
+  EXPECT_GT(totalCustomTagEntries, 0);
+}
